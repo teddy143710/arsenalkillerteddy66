@@ -386,6 +386,25 @@ toggle("Hitbox", "Hitbox")
 toggle("Head only", "HeadOnly")
 slider("Hitbox size", "HitboxSize", 2, 15, 1)
 
+
+local fovCircle = Instance.new("Frame")
+fovCircle.Name = "FOVCircle"
+fovCircle.AnchorPoint = Vector2.new(0.5, 0.5)
+fovCircle.Position = UDim2.fromScale(0.5, 0.5)
+fovCircle.Size = UDim2.fromOffset(S.FOV * 2, S.FOV * 2)
+fovCircle.BackgroundTransparency = 1
+fovCircle.Parent = gui
+
+local fovCorner = Instance.new("UICorner")
+fovCorner.CornerRadius = UDim.new(1, 0)
+fovCorner.Parent = fovCircle
+
+local fovStroke = Instance.new("UIStroke")
+fovStroke.Color = Color3.fromRGB(150, 90, 255)
+fovStroke.Thickness = 2
+fovStroke.Transparency = 0.15
+fovStroke.Parent = fovCircle
+
 local function dragFrame(frame, handle)
     local down = false
     local offset
@@ -422,6 +441,11 @@ local espTimer = 0
 local hitTimer = 0
 
 RunService.RenderStepped:Connect(function(dt)
+    local viewport = Camera.ViewportSize
+    fovCircle.Position = UDim2.fromOffset(viewport.X / 2, viewport.Y / 2)
+    fovCircle.Size = UDim2.fromOffset(S.FOV * 2, S.FOV * 2)
+    fovCircle.Visible = S.Aim
+
     if S.Aim then
         local t = getTarget()
         if t then aimAt(t) end
