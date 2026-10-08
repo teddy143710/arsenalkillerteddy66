@@ -2,6 +2,7 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
+local VIM = game:GetService("VirtualInputManager")
 local Camera = workspace.CurrentCamera
 local LocalPlayer = Players.LocalPlayer
 local CoreGui = game:GetService("CoreGui")
@@ -14,52 +15,78 @@ local S = {
     Speed = 12,
     Distance = 1000,
     TeamCheck = true,
+
     ESP = false,
-    ESPColor = Color3.fromRGB(150, 90, 255),
+    ESPColor = Color3.fromRGB(150,90,255),
     HP = true,
     Dist = true,
     ESPDistance = 1500,
+
     Hitbox = false,
+    HitboxVisible = true,
     HitboxSize = 8,
     HeadOnly = false,
+
     Triggerbot = false,
-    Menu = true,
+    TriggerDistance = 10000,
+    TriggerDelay = 0.08,
+
+    Optimizer = true,
+
     Theme = "Purple",
-    Snow = true
+    Snow = true,
+    Menu = true
 }
 
 local Themes = {
     Purple = {
-        A = Color3.fromRGB(126, 76, 255),
-        B = Color3.fromRGB(65, 95, 255),
-        Panel = Color3.fromRGB(22, 17, 48),
-        Panel2 = Color3.fromRGB(31, 24, 66),
-        Text = Color3.fromRGB(245, 242, 255),
-        Muted = Color3.fromRGB(165, 157, 195)
+        A = Color3.fromRGB(145,85,255),
+        B = Color3.fromRGB(75,35,150),
+        Panel = Color3.fromRGB(19,15,38),
+        Panel2 = Color3.fromRGB(30,23,58),
+        Button = Color3.fromRGB(39,30,70),
+        Text = Color3.fromRGB(245,242,255),
+        Muted = Color3.fromRGB(170,150,220)
     },
+
     Blue = {
-        A = Color3.fromRGB(50, 130, 255),
-        B = Color3.fromRGB(65, 220, 255),
-        Panel = Color3.fromRGB(12, 24, 48),
-        Panel2 = Color3.fromRGB(20, 42, 70),
-        Text = Color3.fromRGB(240, 248, 255),
-        Muted = Color3.fromRGB(150, 180, 205)
+        A = Color3.fromRGB(65,145,255),
+        B = Color3.fromRGB(25,75,170),
+        Panel = Color3.fromRGB(13,21,40),
+        Panel2 = Color3.fromRGB(21,34,62),
+        Button = Color3.fromRGB(28,48,82),
+        Text = Color3.fromRGB(240,248,255),
+        Muted = Color3.fromRGB(145,180,230)
     },
+
     Pink = {
-        A = Color3.fromRGB(255, 70, 180),
-        B = Color3.fromRGB(145, 70, 255),
-        Panel = Color3.fromRGB(42, 14, 39),
-        Panel2 = Color3.fromRGB(64, 20, 61),
-        Text = Color3.fromRGB(255, 242, 250),
-        Muted = Color3.fromRGB(205, 155, 190)
+        A = Color3.fromRGB(255,80,175),
+        B = Color3.fromRGB(150,35,100),
+        Panel = Color3.fromRGB(40,14,32),
+        Panel2 = Color3.fromRGB(63,20,48),
+        Button = Color3.fromRGB(76,28,59),
+        Text = Color3.fromRGB(255,240,250),
+        Muted = Color3.fromRGB(230,150,195)
     },
+
     Ice = {
-        A = Color3.fromRGB(110, 220, 255),
-        B = Color3.fromRGB(105, 130, 255),
-        Panel = Color3.fromRGB(14, 25, 45),
-        Panel2 = Color3.fromRGB(22, 42, 68),
-        Text = Color3.fromRGB(240, 250, 255),
-        Muted = Color3.fromRGB(155, 190, 215)
+        A = Color3.fromRGB(125,225,255),
+        B = Color3.fromRGB(50,125,190),
+        Panel = Color3.fromRGB(10,24,32),
+        Panel2 = Color3.fromRGB(17,42,55),
+        Button = Color3.fromRGB(25,58,73),
+        Text = Color3.fromRGB(235,252,255),
+        Muted = Color3.fromRGB(145,205,225)
+    },
+
+    Red = {
+        A = Color3.fromRGB(255,70,80),
+        B = Color3.fromRGB(150,25,35),
+        Panel = Color3.fromRGB(38,13,16),
+        Panel2 = Color3.fromRGB(62,20,24),
+        Button = Color3.fromRGB(76,28,32),
+        Text = Color3.fromRGB(255,240,240),
+        Muted = Color3.fromRGB(230,150,155)
     }
 }
 
@@ -78,9 +105,11 @@ local function enemy(p)
     if p == LocalPlayer or not alive(p) then
         return false
     end
+
     if S.TeamCheck and LocalPlayer.Team and p.Team and LocalPlayer.Team == p.Team then
         return false
     end
+
     return true
 end
 
@@ -107,11 +136,9 @@ local function visible(part)
 
     local params = RaycastParams.new()
     params.FilterType = Enum.RaycastFilterType.Exclude
-    params.FilterDescendantsInstances = {
-        LocalPlayer.Character
-    }
+    params.FilterDescendantsInstances = {LocalPlayer.Character}
 
-    local hit = workspace:Raycast(origin, direction, params)
+    local hit = workspace:Raycast(origin,direction,params)
 
     return not hit or hit.Instance:IsDescendantOf(part.Parent)
 end
@@ -120,24 +147,22 @@ local lockedTarget = nil
 
 local function getTarget()
     if lockedTarget and enemy(lockedTarget) then
-        local lp = aimPart(lockedTarget)
-        local lr = root(lockedTarget)
+        local part = aimPart(lockedTarget)
 
-        if lp and lr then
-            local distance = (lr.Position - Camera.CFrame.Position).Magnitude
-            local screen, onScreen = Camera:WorldToViewportPoint(lp.Position)
+        if part then
+            local pos,onScreen = Camera:WorldToViewportPoint(part.Position)
 
-            if distance <= S.Distance and onScreen and visible(lp) then
+            if onScreen then
                 local center = Vector2.new(
                     Camera.ViewportSize.X / 2,
                     Camera.ViewportSize.Y / 2
                 )
 
-                local screenDistance = (
-                    Vector2.new(screen.X, screen.Y) - center
+                local d = (
+                    Vector2.new(pos.X,pos.Y) - center
                 ).Magnitude
 
-                if screenDistance <= S.FOV then
+                if d <= S.FOV and visible(part) then
                     return lockedTarget
                 end
             end
@@ -146,14 +171,15 @@ local function getTarget()
 
     lockedTarget = nil
 
-    local best
-    local score
     local center = Vector2.new(
         Camera.ViewportSize.X / 2,
         Camera.ViewportSize.Y / 2
     )
 
-    for _, p in ipairs(Players:GetPlayers()) do
+    local best
+    local score
+
+    for _,p in ipairs(Players:GetPlayers()) do
         if enemy(p) then
             local part = aimPart(p)
             local r = root(p)
@@ -164,29 +190,28 @@ local function getTarget()
                 ).Magnitude
 
                 if distance <= S.Distance and visible(part) then
-                    local pos, onScreen =
+                    local pos,onScreen =
                         Camera:WorldToViewportPoint(part.Position)
 
                     if onScreen then
                         local screenDistance = (
-                            Vector2.new(pos.X, pos.Y) - center
+                            Vector2.new(pos.X,pos.Y) - center
                         ).Magnitude
 
                         if screenDistance <= S.FOV then
-                            local v
+                            local value
 
                             if S.Priority == "Distance" then
-                                v = distance
+                                value = distance
                             elseif S.Priority == "LowHP" then
-                                local h =
-                                    p.Character:FindFirstChildOfClass("Humanoid")
-                                v = h and h.Health or math.huge
+                                local h = p.Character:FindFirstChildOfClass("Humanoid")
+                                value = h and h.Health or math.huge
                             else
-                                v = screenDistance
+                                value = screenDistance
                             end
 
-                            if not score or v < score then
-                                score = v
+                            if not score or value < score then
+                                score = value
                                 best = p
                             end
                         end
@@ -196,7 +221,10 @@ local function getTarget()
         end
     end
 
-    lockedTarget = best
+    if best then
+        lockedTarget = best
+    end
+
     return best
 end
 
@@ -208,13 +236,13 @@ local function aimAt(p)
     end
 
     local cam = Camera.CFrame
-    local goal = CFrame.lookAt(cam.Position, part.Position)
+    local goal = CFrame.lookAt(cam.Position,part.Position)
 
     if S.Mode == "Instant" or S.Mode == "Hold" then
         Camera.CFrame = goal
     else
-        local a = math.clamp(S.Speed / 100, 0.01, 1)
-        Camera.CFrame = cam:Lerp(goal, a)
+        local amount = math.clamp(S.Speed / 100,0.01,1)
+        Camera.CFrame = cam:Lerp(goal,amount)
     end
 end
 
@@ -231,8 +259,8 @@ local function makeESP(p)
     box.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
     box.FillTransparency = 0.78
     box.OutlineTransparency = 0
-    box.FillColor = S.ESPColor
-    box.OutlineColor = S.ESPColor
+    box.FillColor = T().A
+    box.OutlineColor = T().A
     box.Enabled = false
     box.Parent = CoreGui
 
@@ -242,32 +270,67 @@ local function makeESP(p)
 end
 
 local function updateESP()
-    for p, box in pairs(esp) do
-        if not p.Parent then
-            box:Destroy()
-            esp[p] = nil
-        elseif S.ESP and enemy(p) and p.Character then
-            local r = root(p)
-            local d = r and (
-                r.Position - Camera.CFrame.Position
-            ).Magnitude or math.huge
-
-            box.Enabled = d <= S.ESPDistance
-            box.Adornee = p.Character
-            box.FillColor = S.ESPColor
-            box.OutlineColor = S.ESPColor
-        else
-            box.Enabled = false
-            box.Adornee = nil
-        end
-    end
-
-    for _, p in ipairs(Players:GetPlayers()) do
+    for _,p in ipairs(Players:GetPlayers()) do
         if p ~= LocalPlayer then
-            makeESP(p)
+            local box = makeESP(p)
+
+            if S.ESP and enemy(p) and p.Character then
+                local r = root(p)
+
+                local distance = r and (
+                    r.Position - Camera.CFrame.Position
+                ).Magnitude or math.huge
+
+                box.Adornee = p.Character
+                box.Enabled = distance <= S.ESPDistance
+                box.FillColor = T().A
+                box.OutlineColor = T().A
+            else
+                box.Adornee = nil
+                box.Enabled = false
+            end
         end
     end
 end
+
+local function bindPlayer(p)
+    if p == LocalPlayer then
+        return
+    end
+
+    makeESP(p)
+
+    p.CharacterAdded:Connect(function(character)
+        task.wait(0.15)
+
+        local box = makeESP(p)
+        box.Adornee = character
+
+        if S.ESP and enemy(p) then
+            box.Enabled = true
+        end
+    end)
+
+    p.CharacterRemoving:Connect(function()
+        if esp[p] then
+            esp[p].Adornee = nil
+            esp[p].Enabled = false
+        end
+    end)
+end
+
+for _,p in ipairs(Players:GetPlayers()) do
+    bindPlayer(p)
+end
+
+Players.PlayerAdded:Connect(bindPlayer)
+
+Players.PlayerRemoving:Connect(function(p)
+    if esp[p] then
+        esp[p]:Destroy()
+        esp[p] = nil
+    end
+end)
 
 local function applyHitbox(p)
     if not enemy(p) then
@@ -284,35 +347,28 @@ local function applyHitbox(p)
 
     if S.HeadOnly then
         local h = c:FindFirstChild("Head")
+
         if h then
             parts = {h}
         end
     else
         local h = c:FindFirstChild("Head")
         local r = c:FindFirstChild("HumanoidRootPart")
-        local t =
-            c:FindFirstChild("UpperTorso")
+        local t = c:FindFirstChild("UpperTorso")
             or c:FindFirstChild("Torso")
 
-        if h then
-            table.insert(parts, h)
-        end
-
-        if r then
-            table.insert(parts, r)
-        end
-
-        if t then
-            table.insert(parts, t)
-        end
+        if h then table.insert(parts,h) end
+        if r then table.insert(parts,r) end
+        if t then table.insert(parts,t) end
     end
 
-    for _, part in ipairs(parts) do
+    for _,part in ipairs(parts) do
         if part:IsA("BasePart") then
             if not oldHitboxes[part] then
                 oldHitboxes[part] = {
                     Size = part.Size,
                     Transparency = part.Transparency,
+                    LocalTransparencyModifier = part.LocalTransparencyModifier,
                     CanCollide = part.CanCollide
                 }
             end
@@ -323,22 +379,107 @@ local function applyHitbox(p)
                 S.HitboxSize
             )
 
-            part.Transparency = 0.65
             part.CanCollide = false
+
+            if S.HitboxVisible then
+                part.LocalTransparencyModifier = 0.35
+            else
+                part.LocalTransparencyModifier = 1
+            end
         end
     end
 end
 
 local function restoreHitboxes()
-    for part, v in pairs(oldHitboxes) do
+    for part,data in pairs(oldHitboxes) do
         if part and part.Parent then
-            part.Size = v.Size
-            part.Transparency = v.Transparency
-            part.CanCollide = v.CanCollide
+            part.Size = data.Size
+            part.Transparency = data.Transparency
+            part.LocalTransparencyModifier =
+                data.LocalTransparencyModifier
+            part.CanCollide = data.CanCollide
         end
 
         oldHitboxes[part] = nil
     end
+end
+
+local function triggerTarget()
+    local center = Vector2.new(
+        Camera.ViewportSize.X / 2,
+        Camera.ViewportSize.Y / 2
+    )
+
+    local best
+    local bestDistance = math.huge
+
+    for _,p in ipairs(Players:GetPlayers()) do
+        if enemy(p) then
+            local part = aimPart(p)
+            local r = root(p)
+
+            if part and r then
+                local distance = (
+                    r.Position - Camera.CFrame.Position
+                ).Magnitude
+
+                if distance <= S.TriggerDistance then
+                    local pos,onScreen =
+                        Camera:WorldToViewportPoint(part.Position)
+
+                    if onScreen then
+                        local screenDistance = (
+                            Vector2.new(pos.X,pos.Y) - center
+                        ).Magnitude
+
+                        if screenDistance <= S.FOV
+                            and screenDistance < bestDistance
+                            and visible(part) then
+
+                            best = p
+                            bestDistance = screenDistance
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return best
+end
+
+local lastShot = 0
+
+local function triggerFire()
+    local now = os.clock()
+
+    if now - lastShot < S.TriggerDelay then
+        return
+    end
+
+    lastShot = now
+
+    pcall(function()
+        VIM:SendMouseButtonEvent(
+            Camera.ViewportSize.X / 2,
+            Camera.ViewportSize.Y / 2,
+            0,
+            true,
+            game,
+            0
+        )
+
+        task.wait(0.02)
+
+        VIM:SendMouseButtonEvent(
+            Camera.ViewportSize.X / 2,
+            Camera.ViewportSize.Y / 2,
+            0,
+            false,
+            game,
+            0
+        )
+    end)
 end
 
 local gui = Instance.new("ScreenGui")
@@ -347,221 +488,124 @@ gui.ResetOnSpawn = false
 gui.IgnoreGuiInset = true
 gui.Parent = CoreGui
 
-local function corner(o, n)
+local function corner(o,n)
     local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, n)
+    c.CornerRadius = UDim.new(0,n)
     c.Parent = o
-    return c
 end
 
 local function gradient(o)
     local g = Instance.new("UIGradient")
     g.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, T().A),
-        ColorSequenceKeypoint.new(1, T().B)
+        ColorSequenceKeypoint.new(0,T().A),
+        ColorSequenceKeypoint.new(1,T().B)
     })
-    g.Rotation = 35
+    g.Rotation = 45
     g.Parent = o
     return g
 end
 
-local function glow(o, thickness)
+local function stroke(o)
     local s = Instance.new("UIStroke")
     s.Color = T().A
-    s.Thickness = thickness or 1
-    s.Transparency = 0.25
+    s.Thickness = 1.5
+    s.Transparency = 0.15
     s.Parent = o
     return s
 end
 
-local function text(parent, value, size, position, font)
-    local x = Instance.new("TextLabel")
-    x.BackgroundTransparency = 1
-    x.Text = value
-    x.TextColor3 = T().Text
-    x.TextSize = size
-    x.Font = font or Enum.Font.GothamSemibold
-    x.Position = position
-    x.Size = UDim2.new(1, -20, 0, 25)
-    x.TextXAlignment = Enum.TextXAlignment.Left
-    x.Parent = parent
-    return x
-end
-
-local function button(parent, value, callback)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, -12, 0, 42)
-    b.BackgroundColor3 = T().Panel2
-    b.Text = value
-    b.TextColor3 = T().Text
-    b.TextSize = 13
-    b.Font = Enum.Font.GothamSemibold
-    b.AutoButtonColor = false
-    b.Parent = parent
-
-    corner(b, 10)
-    glow(b, 1)
-
-    b.MouseEnter:Connect(function()
-        TweenService:Create(
-            b,
-            TweenInfo.new(.15),
-            {BackgroundColor3 = T().A}
-        ):Play()
-    end)
-
-    b.MouseLeave:Connect(function()
-        TweenService:Create(
-            b,
-            TweenInfo.new(.15),
-            {BackgroundColor3 = T().Panel2}
-        ):Play()
-    end)
-
-    b.Activated:Connect(callback)
-
-    return b
-end
+local orb = Instance.new("TextButton")
+orb.Size = UDim2.fromOffset(58,58)
+orb.Position = UDim2.fromOffset(24,200)
+orb.Text = "B"
+orb.TextSize = 24
+orb.Font = Enum.Font.GothamBold
+orb.TextColor3 = Color3.new(1,1,1)
+orb.BackgroundColor3 = T().A
+orb.Parent = gui
+corner(orb,58)
+stroke(orb)
+gradient(orb)
 
 local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.fromOffset(760, 480)
-main.Position = UDim2.new(.5, -380, .5, -240)
+main.Size = UDim2.fromOffset(620,390)
+main.Position = UDim2.new(0.5,-310,0.5,-195)
 main.BackgroundColor3 = T().Panel
-main.BackgroundTransparency = .06
 main.Parent = gui
+main:SetAttribute("ThemePanel",true)
+corner(main,16)
+stroke(main)
 
-corner(main, 18)
-glow(main, 2)
-gradient(main)
+local top = Instance.new("Frame")
+top.Size = UDim2.new(1,0,0,58)
+top.BackgroundColor3 = T().Panel2
+top.Parent = main
+top:SetAttribute("ThemePanel2",true)
+corner(top,16)
 
-local overlay = Instance.new("Frame")
-overlay.Size = UDim2.fromScale(1, 1)
-overlay.BackgroundColor3 = T().Panel
-overlay.BackgroundTransparency = .22
-overlay.Parent = main
-corner(overlay, 18)
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1,-120,1,0)
+title.Position = UDim2.fromOffset(18,0)
+title.BackgroundTransparency = 1
+title.Text = "BARRAGE"
+title.TextColor3 = T().Text
+title.TextSize = 20
+title.Font = Enum.Font.GothamBold
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Parent = top
 
-local header = Instance.new("Frame")
-header.Size = UDim2.new(1, -20, 0, 65)
-header.Position = UDim2.fromOffset(10, 10)
-header.BackgroundColor3 = T().Panel2
-header.Parent = main
-
-corner(header, 14)
-glow(header, 1)
-
-local logo = Instance.new("TextLabel")
-logo.Size = UDim2.fromOffset(48, 48)
-logo.Position = UDim2.fromOffset(8, 8)
-logo.BackgroundColor3 = T().A
-logo.Text = "B"
-logo.TextColor3 = Color3.new(1, 1, 1)
-logo.TextSize = 25
-logo.Font = Enum.Font.GothamBlack
-logo.Parent = header
-
-corner(logo, 13)
-gradient(logo)
-
-local title = text(
-    header,
-    "BARRAGE",
-    20,
-    UDim2.fromOffset(68, 7),
-    Enum.Font.GothamBlack
-)
-
-local subtitle = text(
-    header,
-    "KEY SYSTEM  •  VERSION 6.0",
-    11,
-    UDim2.fromOffset(69, 34),
-    Enum.Font.GothamSemibold
-)
-
-subtitle.TextColor3 = T().Muted
-
-local status = Instance.new("TextLabel")
-status.Size = UDim2.fromOffset(150, 34)
-status.Position = UDim2.new(1, -195, 0, 15)
-status.BackgroundColor3 = Color3.fromRGB(18, 16, 32)
-status.Text = "●  ONLINE"
-status.TextColor3 = T().A
-status.TextSize = 12
-status.Font = Enum.Font.GothamBold
-status.Parent = header
-
-corner(status, 9)
-glow(status, 1)
+local sub = Instance.new("TextLabel")
+sub.Size = UDim2.new(1,-120,0,18)
+sub.Position = UDim2.fromOffset(19,34)
+sub.BackgroundTransparency = 1
+sub.Text = "Combat interface"
+sub.TextColor3 = T().Muted
+sub.TextSize = 10
+sub.Font = Enum.Font.Gotham
+sub.TextXAlignment = Enum.TextXAlignment.Left
+sub.Parent = top
 
 local close = Instance.new("TextButton")
-close.Size = UDim2.fromOffset(35, 35)
-close.Position = UDim2.new(1, -43, 0, 15)
+close.Size = UDim2.fromOffset(38,34)
+close.Position = UDim2.new(1,-48,0,12)
 close.Text = "×"
 close.TextSize = 22
 close.Font = Enum.Font.GothamBold
 close.TextColor3 = T().Text
-close.BackgroundColor3 = Color3.fromRGB(65, 39, 105)
-close.Parent = header
+close.BackgroundColor3 = T().Button
+close.Parent = top
+corner(close,9)
 
-corner(close, 9)
-
-local navigation = Instance.new("Frame")
-navigation.Size = UDim2.fromOffset(190, 385)
-navigation.Position = UDim2.fromOffset(10, 85)
-navigation.BackgroundColor3 = T().Panel2
-navigation.Parent = main
-
-corner(navigation, 14)
-glow(navigation, 1)
-
-local navTitle = text(
-    navigation,
-    "CONTROL",
-    11,
-    UDim2.fromOffset(14, 12),
-    Enum.Font.GothamBold
-)
-
-navTitle.TextColor3 = T().Muted
-
-local navContainer = Instance.new("Frame")
-navContainer.Size = UDim2.new(1, -16, 1, -50)
-navContainer.Position = UDim2.fromOffset(8, 40)
-navContainer.BackgroundTransparency = 1
-navContainer.Parent = navigation
-
-local navLayout = Instance.new("UIListLayout")
-navLayout.Padding = UDim.new(0, 7)
-navLayout.Parent = navContainer
+local tabs = Instance.new("Frame")
+tabs.Size = UDim2.fromOffset(130,318)
+tabs.Position = UDim2.fromOffset(10,66)
+tabs.BackgroundColor3 = T().Panel2
+tabs.Parent = main
+tabs:SetAttribute("ThemePanel2",true)
+corner(tabs,12)
 
 local content = Instance.new("Frame")
-content.Size = UDim2.new(1, -210, 1, -85)
-content.Position = UDim2.fromOffset(200, 85)
-content.BackgroundColor3 = T().Panel2
+content.Size = UDim2.new(1,-150,1,-76)
+content.Position = UDim2.fromOffset(145,66)
+content.BackgroundTransparency = 1
 content.Parent = main
-
-corner(content, 14)
-glow(content, 1)
 
 local pages = {}
 
 local function createPage(name)
     local page = Instance.new("ScrollingFrame")
     page.Name = name
-    page.Size = UDim2.new(1, -18, 1, -18)
-    page.Position = UDim2.fromOffset(9, 9)
+    page.Size = UDim2.fromScale(1,1)
     page.BackgroundTransparency = 1
     page.BorderSizePixel = 0
-    page.ScrollBarThickness = 3
+    page.ScrollBarThickness = 2
     page.AutomaticCanvasSize = Enum.AutomaticSize.Y
     page.CanvasSize = UDim2.new()
     page.Visible = false
     page.Parent = content
 
     local layout = Instance.new("UIListLayout")
-    layout.Padding = UDim.new(0, 8)
+    layout.Padding = UDim.new(0,7)
     layout.Parent = page
 
     pages[name] = page
@@ -569,137 +613,97 @@ local function createPage(name)
     return page
 end
 
-local aimPage = createPage("AIMBOT")
+local aimPage = createPage("Aimbot")
 local espPage = createPage("ESP")
-local hitboxPage = createPage("HITBOX")
-local visualPage = createPage("VISUALS")
-local settingsPage = createPage("SETTINGS")
+local hitPage = createPage("Hitbox")
+local visualPage = createPage("Visual")
+local settingsPage = createPage("Settings")
 
-local currentPage
+local function tabButton(name)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1,-12,0,42)
+    b.BackgroundColor3 = T().Button
+    b.Text = name
+    b.TextColor3 = T().Muted
+    b.TextSize = 12
+    b.Font = Enum.Font.GothamSemibold
+    b.Parent = tabs
+    corner(b,9)
+    return b
+end
 
-local function selectPage(name)
-    for n, page in pairs(pages) do
+local tabNames = {
+    "Aimbot",
+    "ESP",
+    "Hitbox",
+    "Visual",
+    "Settings"
+}
+
+local tabButtons = {}
+
+for i,name in ipairs(tabNames) do
+    local b = tabButton(name)
+    b.Position = UDim2.fromOffset(6,6+(i-1)*48)
+    tabButtons[name] = b
+end
+
+local function showPage(name)
+    for n,page in pairs(pages) do
         page.Visible = n == name
     end
 
-    currentPage = name
-end
-
-local navButtons = {}
-
-local function navButton(name, icon, page)
-    local b = button(
-        navContainer,
-        icon .. "   " .. name,
-        function()
-            selectPage(page)
-
-            for _, x in pairs(navButtons) do
-                x.BackgroundColor3 = T().Panel2
-            end
-
-            b.BackgroundColor3 = T().A
-        end
-    )
-
-    navButtons[name] = b
-
-    return b
-end
-
-navButton("AIMBOT", "◈", "AIMBOT")
-navButton("ESP", "◎", "ESP")
-navButton("HITBOX", "◇", "HITBOX")
-navButton("VISUALS", "✦", "VISUALS")
-navButton("SETTINGS", "⚙", "SETTINGS")
-
-local function section(parent, value)
-    local holder = Instance.new("Frame")
-    holder.Size = UDim2.new(1, -5, 0, 30)
-    holder.BackgroundTransparency = 1
-    holder.Parent = parent
-
-    local line = Instance.new("Frame")
-    line.Size = UDim2.fromOffset(4, 19)
-    line.Position = UDim2.fromOffset(2, 5)
-    line.BackgroundColor3 = T().A
-    line.Parent = holder
-
-    corner(line, 3)
-
-    local l = text(
-        holder,
-        value,
-        13,
-        UDim2.fromOffset(15, 1),
-        Enum.Font.GothamBold
-    )
-
-    return holder
-end
-
-local function option(parent, name, value)
-    local holder = Instance.new("Frame")
-    holder.Size = UDim2.new(1, -5, 0, 48)
-    holder.BackgroundColor3 = T().Panel
-    holder.Parent = parent
-
-    corner(holder, 10)
-    glow(holder, 1)
-
-    local a = text(
-        holder,
-        name,
-        12,
-        UDim2.fromOffset(13, 2),
-        Enum.Font.GothamSemibold
-    )
-
-    local b = text(
-        holder,
-        tostring(value),
-        11,
-        UDim2.fromOffset(13, 25),
-        Enum.Font.Gotham
-    )
-
-    b.TextColor3 = T().Muted
-
-    return holder
-end
-
-local function cycle(parent, name, key, values)
-    local index = 1
-
-    for i, v in ipairs(values) do
-        if v == S[key] then
-            index = i
-        end
+    for n,b in pairs(tabButtons) do
+        b.BackgroundColor3 =
+            n == name and T().A or T().Button
+        b.TextColor3 =
+            n == name and Color3.new(1,1,1) or T().Muted
     end
+end
 
-    local b
+for name,b in pairs(tabButtons) do
+    b.Activated:Connect(function()
+        showPage(name)
+    end)
+end
 
-    b = button(
-        parent,
-        name .. "  •  " .. tostring(S[key]),
-        function()
-            index = index % #values + 1
-            S[key] = values[index]
-            b.Text = name .. "  •  " .. tostring(S[key])
-        end
-    )
+local function label(parent,text)
+    local x = Instance.new("TextLabel")
+    x.Size = UDim2.new(1,-5,0,25)
+    x.BackgroundTransparency = 1
+    x.Text = text
+    x.TextColor3 = T().Muted
+    x.TextSize = 14
+    x.Font = Enum.Font.GothamBold
+    x.TextXAlignment = Enum.TextXAlignment.Left
+    x.Parent = parent
+end
 
+local function button(parent,text,callback)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1,-5,0,36)
+    b.BackgroundColor3 = T().Button
+    b.Text = text
+    b.TextColor3 = T().Text
+    b.TextSize = 12
+    b.Font = Enum.Font.GothamSemibold
+    b.Parent = parent
+    corner(b,9)
+    b.Activated:Connect(callback)
     return b
 end
 
-local function toggle(parent, name, key)
+local function toggle(parent,name,key)
     local b
 
     local function refresh()
-        b.Text = name .. "  •  " .. (S[key] and "ON" or "OFF")
+        b.Text = name .. "     " ..
+            (S[key] and "ON" or "OFF")
+        b.BackgroundColor3 =
+            S[key] and T().A or T().Button
     end
 
-    b = button(parent, "", function()
+    b = button(parent,"",function()
         S[key] = not S[key]
         refresh()
     end)
@@ -709,63 +713,115 @@ local function toggle(parent, name, key)
     return b
 end
 
-local function slider(parent, name, key, min, max, step)
-    local holder = Instance.new("Frame")
-    holder.Size = UDim2.new(1, -5, 0, 65)
-    holder.BackgroundColor3 = T().Panel
-    holder.Parent = parent
+local function cycle(parent,name,key,values)
+    local index = 1
 
-    corner(holder, 10)
-    glow(holder, 1)
+    for i,v in ipairs(values) do
+        if v == S[key] then
+            index = i
+        end
+    end
 
-    local label = text(
-        holder,
-        name .. "  •  " .. tostring(S[key]),
-        12,
-        UDim2.fromOffset(12, 4),
-        Enum.Font.GothamSemibold
+    local b = button(
+        parent,
+        name .. "     " .. tostring(S[key]),
+        function()
+            index = index % #values + 1
+            S[key] = values[index]
+            b.Text = name .. "     " .. tostring(S[key])
+
+            if key == "Theme" then
+                task.defer(function()
+                    for _,obj in ipairs(gui:GetDescendants()) do
+                        if obj:IsA("Frame") then
+                            if obj:GetAttribute("ThemePanel") then
+                                obj.BackgroundColor3 = T().Panel
+                            elseif obj:GetAttribute("ThemePanel2") then
+                                obj.BackgroundColor3 = T().Panel2
+                            end
+                        elseif obj:IsA("TextButton") then
+                            obj.BackgroundColor3 = T().Button
+                            obj.TextColor3 = T().Text
+                        elseif obj:IsA("TextLabel") then
+                            obj.TextColor3 = T().Text
+                        elseif obj:IsA("UIStroke") then
+                            obj.Color = T().A
+                        elseif obj:IsA("UIGradient") then
+                            obj.Color = ColorSequence.new({
+                                ColorSequenceKeypoint.new(0,T().A),
+                                ColorSequenceKeypoint.new(1,T().B)
+                            })
+                        end
+                    }
+
+                    orb.BackgroundColor3 = T().A
+                    fovStroke.Color = T().A
+
+                    for _,box in pairs(esp) do
+                        box.FillColor = T().A
+                        box.OutlineColor = T().A
+                    end
+
+                    showPage("Settings")
+                end)
+            end
+        end
     )
 
-    local bar = Instance.new("Frame")
-    bar.Size = UDim2.new(1, -24, 0, 7)
-    bar.Position = UDim2.fromOffset(12, 43)
-    bar.BackgroundColor3 = Color3.fromRGB(50, 42, 75)
-    bar.Parent = holder
+    return b
+end
 
-    corner(bar, 8)
+local function slider(parent,name,key,min,max,step)
+    local holder = Instance.new("Frame")
+    holder.Size = UDim2.new(1,-5,0,52)
+    holder.BackgroundTransparency = 1
+    holder.Parent = parent
+
+    local text = Instance.new("TextLabel")
+    text.Size = UDim2.new(1,0,0,20)
+    text.BackgroundTransparency = 1
+    text.TextColor3 = T().Text
+    text.TextSize = 11
+    text.Font = Enum.Font.Gotham
+    text.TextXAlignment = Enum.TextXAlignment.Left
+    text.Parent = holder
+
+    local bar = Instance.new("Frame")
+    bar.Size = UDim2.new(1,0,0,7)
+    bar.Position = UDim2.fromOffset(0,29)
+    bar.BackgroundColor3 = T().Button
+    bar.Parent = holder
+    corner(bar,7)
 
     local fill = Instance.new("Frame")
     fill.BackgroundColor3 = T().A
     fill.Parent = bar
-
-    corner(fill, 8)
-
-    local q = math.clamp(
-        (S[key] - min) / (max - min),
-        0,
-        1
-    )
-
-    fill.Size = UDim2.new(q, 0, 1, 0)
+    corner(fill,7)
 
     local dragging = false
 
     local function update(x)
-        local pos = math.clamp(
-            (x - bar.AbsolutePosition.X) /
-            bar.AbsoluteSize.X,
+        local q = math.clamp(
+            (x-bar.AbsolutePosition.X) /
+            math.max(bar.AbsoluteSize.X,1),
             0,
             1
         )
 
-        local raw = min + (max - min) * pos
-        local value = math.floor(raw / step + .5) * step
+        local raw = min+(max-min)*q
+        local value =
+            math.floor(raw/step+0.5)*step
 
         S[key] = value
-
-        fill.Size = UDim2.new(pos, 0, 1, 0)
-        label.Text = name .. "  •  " .. tostring(value)
+        fill.Size = UDim2.new(q,0,1,0)
+        text.Text = name .. "     " .. tostring(value)
     end
+
+    local q =
+        math.clamp((S[key]-min)/(max-min),0,1)
+
+    fill.Size = UDim2.new(q,0,1,0)
+    text.Text = name .. "     " .. tostring(S[key])
 
     bar.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
@@ -777,17 +833,19 @@ local function slider(parent, name, key, min, max, step)
     end)
 
     UIS.InputChanged:Connect(function(input)
-        if dragging and (
-            input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch
-        ) then
-            update(input.Position.X)
+        if dragging then
+            if input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch then
+
+                update(input.Position.X)
+            end
         end
     end)
 
     UIS.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
+
             dragging = false
         end
     end)
@@ -795,209 +853,103 @@ local function slider(parent, name, key, min, max, step)
     return holder
 end
 
-section(aimPage, "TARGETING")
+label(aimPage,"AIMBOT")
+toggle(aimPage,"Aimbot","Aim")
+cycle(aimPage,"Target","Priority",{"Crosshair","Distance","LowHP"})
+cycle(aimPage,"Mode","Mode",{"Instant","Smooth","Hold"})
+toggle(aimPage,"Team check","TeamCheck")
+slider(aimPage,"FOV","FOV",20,360,5)
+slider(aimPage,"Aim speed","Speed",1,100,1)
+slider(aimPage,"Detection distance","Distance",50,2000,25)
 
-toggle(aimPage, "Aimbot", "Aim")
-toggle(aimPage, "Team check", "TeamCheck")
-toggle(aimPage, "Triggerbot", "Triggerbot")
-cycle(
-    aimPage,
-    "Priority",
-    "Priority",
-    {"Crosshair", "Distance", "LowHP"}
-)
+label(aimPage,"TRIGGER")
+toggle(aimPage,"Triggerbot","Triggerbot")
+slider(aimPage,"Trigger distance","TriggerDistance",100,10000,100)
+slider(aimPage,"Trigger delay","TriggerDelay",0.01,0.5,0.01)
 
-cycle(
-    aimPage,
-    "Mode",
-    "Mode",
-    {"Instant", "Smooth", "Hold"}
-)
+label(espPage,"PLAYER ESP")
+toggle(espPage,"ESP","ESP")
+toggle(espPage,"Show HP","HP")
+toggle(espPage,"Show distance","Dist")
+slider(espPage,"ESP distance","ESPDistance",50,3000,25)
 
-slider(aimPage, "FOV", "FOV", 20, 360, 5)
-slider(aimPage, "Aim speed", "Speed", 1, 100, 1)
-slider(aimPage, "Detection distance", "Distance", 50, 2000, 25)
+label(hitPage,"HITBOX")
+toggle(hitPage,"Hitbox","Hitbox")
+toggle(hitPage,"Show hitboxes","HitboxVisible")
+toggle(hitPage,"Head only","HeadOnly")
+slider(hitPage,"Hitbox size","HitboxSize",2,15,1)
 
-section(espPage, "PLAYER ESP")
+label(visualPage,"VISUAL")
+toggle(visualPage,"Snow effect","Snow")
 
-toggle(espPage, "ESP", "ESP")
-toggle(espPage, "Health", "HP")
-toggle(espPage, "Distance", "Dist")
-slider(
-    espPage,
-    "ESP distance",
-    "ESPDistance",
-    50,
-    2000,
-    25
-)
+label(settingsPage,"INTERFACE")
+cycle(settingsPage,"Theme","Theme",{
+    "Purple",
+    "Blue",
+    "Pink",
+    "Ice",
+    "Red"
+})
 
-section(hitboxPage, "HITBOX")
-
-toggle(hitboxPage, "Hitbox", "Hitbox")
-toggle(hitboxPage, "Head only", "HeadOnly")
-slider(
-    hitboxPage,
-    "Hitbox size",
-    "HitboxSize",
-    2,
-    15,
-    1
-)
-
-section(visualPage, "VISUAL STYLE")
-
-cycle(
-    visualPage,
-    "Theme",
-    "Theme",
-    {"Purple", "Blue", "Pink", "Ice"}
-)
-
-toggle(visualPage, "Snow effect", "Snow")
+toggle(settingsPage,"Optimizer","Optimizer")
 
 local fovCircle = Instance.new("Frame")
 fovCircle.Name = "FOVCircle"
-fovCircle.AnchorPoint = Vector2.new(.5, .5)
+fovCircle.AnchorPoint = Vector2.new(0.5,0.5)
+fovCircle.Position = UDim2.fromScale(0.5,0.5)
+fovCircle.Size = UDim2.fromOffset(S.FOV*2,S.FOV*2)
 fovCircle.BackgroundTransparency = 1
 fovCircle.Parent = gui
 
-corner(fovCircle, 999)
+corner(fovCircle,S.FOV)
 
 local fovStroke = Instance.new("UIStroke")
 fovStroke.Color = T().A
 fovStroke.Thickness = 2
-fovStroke.Transparency = .1
+fovStroke.Transparency = 0.15
 fovStroke.Parent = fovCircle
 
-section(settingsPage, "SYSTEM")
+local snowHolder = Instance.new("Frame")
+snowHolder.Size = UDim2.fromScale(1,1)
+snowHolder.BackgroundTransparency = 1
+snowHolder.ClipsDescendants = true
+snowHolder.ZIndex = 20
+snowHolder.Parent = gui
 
-option(settingsPage, "Interface", "BARRAGE")
-option(settingsPage, "Version", "6.0")
-option(
-    settingsPage,
-    "Device",
-    UIS.TouchEnabled and "Mobile" or "Desktop"
-)
+local snowflakes = {}
 
-local infoBox = Instance.new("Frame")
-infoBox.Size = UDim2.new(1, -5, 0, 65)
-infoBox.BackgroundColor3 = T().Panel
-infoBox.Parent = settingsPage
+for i = 1,35 do
+    local flake = Instance.new("TextLabel")
+    flake.BackgroundTransparency = 1
+    flake.Text = "•"
+    flake.TextColor3 = Color3.new(1,1,1)
+    flake.TextTransparency = math.random(20,60)/100
+    flake.TextSize = math.random(7,14)
+    flake.Position = UDim2.fromScale(
+        math.random(),
+        math.random()
+    )
+    flake.Size = UDim2.fromOffset(20,20)
+    flake.ZIndex = 21
+    flake.Parent = snowHolder
 
-corner(infoBox, 10)
-glow(infoBox, 1)
-
-local infoText = text(
-    infoBox,
-    "BARRAGE • Advanced Interface",
-    13,
-    UDim2.fromOffset(13, 9),
-    Enum.Font.GothamBold
-)
-
-local infoSub = text(
-    infoBox,
-    "Glass UI / Neon Purple / Responsive HUD",
-    11,
-    UDim2.fromOffset(13, 34),
-    Enum.Font.Gotham
-)
-
-infoSub.TextColor3 = T().Muted
-
-local function createSnow()
-    local snowLayer = Instance.new("Frame")
-    snowLayer.Name = "Snow"
-    snowLayer.Size = UDim2.fromScale(1, 1)
-    snowLayer.BackgroundTransparency = 1
-    snowLayer.ClipsDescendants = true
-    snowLayer.ZIndex = 20
-    snowLayer.Parent = gui
-
-    task.spawn(function()
-        while snowLayer.Parent do
-            if S.Snow then
-                local flake = Instance.new("TextLabel")
-                flake.BackgroundTransparency = 1
-                flake.Text = "•"
-                flake.TextColor3 = Color3.fromRGB(
-                    220,
-                    225,
-                    255
-                )
-                flake.TextTransparency = math.random(0, 35) / 100
-                flake.TextSize = math.random(8, 16)
-                flake.Size = UDim2.fromOffset(20, 20)
-                flake.Position = UDim2.new(
-                    math.random(),
-                    0,
-                    -0.05,
-                    0
-                )
-                flake.ZIndex = 20
-                flake.Parent = snowLayer
-
-                local duration = math.random(35, 70) / 10
-
-                TweenService:Create(
-                    flake,
-                    TweenInfo.new(
-                        duration,
-                        Enum.EasingStyle.Linear
-                    ),
-                    {
-                        Position = UDim2.new(
-                            math.random(),
-                            0,
-                            1.05,
-                            0
-                        ),
-                        Rotation = math.random(-180, 180)
-                    }
-                ):Play()
-
-                task.delay(duration, function()
-                    if flake then
-                        flake:Destroy()
-                    end
-                end)
-            end
-
-            task.wait(.15)
-        end
-    end)
+    table.insert(snowflakes,{
+        Object = flake,
+        Speed = math.random(10,30)/100,
+        Drift = math.random(-10,10)/100
+    })
 end
 
-createSnow()
-
-local orb = Instance.new("TextButton")
-orb.Size = UDim2.fromOffset(64, 64)
-orb.Position = UDim2.fromOffset(25, 170)
-orb.Text = "B"
-orb.TextSize = 25
-orb.Font = Enum.Font.GothamBlack
-orb.TextColor3 = Color3.new(1, 1, 1)
-orb.BackgroundColor3 = T().A
-orb.Parent = gui
-orb.ZIndex = 30
-
-corner(orb, 18)
-glow(orb, 2)
-gradient(orb)
-
-local function dragFrame(frame, handle)
+local function dragFrame(frame,handle)
     local dragging = false
-    local start
-    local original
+    local offset
 
     handle.InputBegan:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
 
             dragging = true
-            start = input.Position
-            original = frame.Position
+            offset = input.Position-frame.AbsolutePosition
         end
     end)
 
@@ -1009,13 +961,9 @@ local function dragFrame(frame, handle)
         if input.UserInputType == Enum.UserInputType.MouseMovement
             or input.UserInputType == Enum.UserInputType.Touch then
 
-            local delta = input.Position - start
-
-            frame.Position = UDim2.new(
-                original.X.Scale,
-                original.X.Offset + delta.X,
-                original.Y.Scale,
-                original.Y.Offset + delta.Y
+            frame.Position = UDim2.fromOffset(
+                input.Position.X-offset.X,
+                input.Position.Y-offset.Y
             )
         end
     end)
@@ -1023,13 +971,61 @@ local function dragFrame(frame, handle)
     UIS.InputEnded:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.MouseButton1
             or input.UserInputType == Enum.UserInputType.Touch then
+
             dragging = false
         end
     end)
 end
 
-dragFrame(main, header)
-dragFrame(orb, orb)
+local resize = Instance.new("TextButton")
+resize.Size = UDim2.fromOffset(22,22)
+resize.Position = UDim2.new(1,-25,1,-25)
+resize.BackgroundTransparency = 1
+resize.Text = "◢"
+resize.TextColor3 = T().Muted
+resize.TextSize = 13
+resize.ZIndex = 30
+resize.Parent = main
+
+local resizing = false
+local resizeStart
+local resizeSize
+
+resize.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        resizing = true
+        resizeStart = input.Position
+        resizeSize = main.AbsoluteSize
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if resizing then
+        if input.UserInputType == Enum.UserInputType.MouseMovement
+            or input.UserInputType == Enum.UserInputType.Touch then
+
+            local delta = input.Position-resizeStart
+
+            main.Size = UDim2.fromOffset(
+                math.clamp(resizeSize.X+delta.X,500,900),
+                math.clamp(resizeSize.Y+delta.Y,330,650)
+            )
+        end
+    end
+end)
+
+UIS.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+
+        resizing = false
+    end
+end)
+
+dragFrame(main,top)
+dragFrame(orb,orb)
 
 orb.Activated:Connect(function()
     S.Menu = not S.Menu
@@ -1041,26 +1037,24 @@ close.Activated:Connect(function()
     main.Visible = false
 end)
 
-selectPage("AIMBOT")
-
-if navButtons["AIMBOT"] then
-    navButtons["AIMBOT"].BackgroundColor3 = T().A
-end
+showPage("Aimbot")
 
 local espTimer = 0
 local hitTimer = 0
+local triggerTimer = 0
+local snowTimer = 0
 
 RunService.RenderStepped:Connect(function(dt)
     local viewport = Camera.ViewportSize
 
     fovCircle.Position = UDim2.fromOffset(
-        viewport.X / 2,
-        viewport.Y / 2
+        viewport.X/2,
+        viewport.Y/2
     )
 
     fovCircle.Size = UDim2.fromOffset(
-        S.FOV * 2,
-        S.FOV * 2
+        S.FOV*2,
+        S.FOV*2
     )
 
     fovCircle.Visible = S.Aim
@@ -1075,35 +1069,92 @@ RunService.RenderStepped:Connect(function(dt)
         lockedTarget = nil
     end
 
+    triggerTimer += dt
+
+    if triggerTimer >= 0.025 then
+        triggerTimer = 0
+
+        if S.Triggerbot then
+            local target = triggerTarget()
+
+            if target then
+                triggerFire()
+            end
+        end
+    end
+
     espTimer += dt
 
-    if espTimer >= .08 then
+    local espRate =
+        S.Optimizer and 0.12 or 0.04
+
+    if espTimer >= espRate then
         espTimer = 0
-        updateESP()
+
+        if S.ESP then
+            updateESP()
+        end
     end
 
     hitTimer += dt
 
-    if hitTimer >= .15 then
+    local hitRate =
+        S.Optimizer and 0.18 or 0.07
+
+    if hitTimer >= hitRate then
         hitTimer = 0
 
         if S.Hitbox then
-            for _, p in ipairs(Players:GetPlayers()) do
+            for _,p in ipairs(Players:GetPlayers()) do
                 applyHitbox(p)
             end
         else
             restoreHitboxes()
         end
     end
+
+    snowTimer += dt
+
+    if snowTimer >= 0.03 then
+        snowTimer = 0
+
+        snowHolder.Visible = S.Snow
+
+        if S.Snow then
+            for _,data in ipairs(snowflakes) do
+                local obj = data.Object
+                local pos = obj.Position
+
+                local y = pos.Y.Scale +
+                    data.Speed*0.03
+
+                local x = pos.X.Scale +
+                    data.Drift*0.003
+
+                if y > 1.05 then
+                    y = -0.05
+                    x = math.random()
+                end
+
+                obj.Position = UDim2.fromScale(x,y)
+            end
+        end
+    end
 end)
 
-Players.PlayerRemoving:Connect(function(p)
-    if lockedTarget == p then
-        lockedTarget = nil
-    end
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(0.2)
 
-    if esp[p] then
-        esp[p]:Destroy()
-        esp[p] = nil
+    Camera = workspace.CurrentCamera
+
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer then
+            local box = makeESP(p)
+
+            if S.ESP and p.Character and enemy(p) then
+                box.Adornee = p.Character
+                box.Enabled = true
+            end
+        end
     end
 end)
