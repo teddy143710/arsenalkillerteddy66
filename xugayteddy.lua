@@ -851,4 +851,3 @@ gui.Destroying:Connect(function()
 end)
 
 print("[Mobile FPS Booster v2] Loaded. Open the FPS button.")
-
