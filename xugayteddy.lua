@@ -1,5 +1,5 @@
--- Booga Booga FPS Booster v6 + CzxstyleUI HUD (Leon button, Blood-click)
--- Delta / Samsung Galaxy A06. Меню: круглая кнопка CZX. Клавиатура не нужна.
+-- Booga Booga FPS Booster v7 + CzxstyleUI HUD (Leon button, Blood-click, Cat settings)
+-- Delta / Samsung Galaxy A06. Меню: круглая RGB-кнопка с Леоном. Клавиатура не нужна.
 -- Каждая функция показывает в уведомлении, что именно изменила,
 -- и всё возвращается обратно при выключении или "Выгрузить".
 
@@ -97,6 +97,7 @@ local function inCharacter(obj)
 end
 
 local function isPost(o)
+    if o.Name == "CzxCatBlur" then return false end
     return o:IsA("BloomEffect") or o:IsA("BlurEffect") or o:IsA("SunRaysEffect")
         or o:IsA("DepthOfFieldEffect") or o:IsA("ColorCorrectionEffect")
 end
@@ -700,8 +701,11 @@ local MODES = {"TOUCH", "MOUSE", "TOOL"}
 local TOUCH_ID = 9
 local KEYS = {[0] = "Zero", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"}
 
+local root     -- ScreenGui, создаётся в интерфейсе
 local circle   -- создаётся в интерфейсе
 local setAC    -- задаётся в интерфейсе
+local showCat, closeCat   -- задаются ниже
+local rainbowGrads = {}
 
 local function currentHumanoid()
     local c = player.Character
@@ -794,12 +798,15 @@ local function getHealth()
     return nil
 end
 
+-- имя без пробелов/подчёркиваний/дефисов: "Blood fruit" == "Bloodfruit"
+local function norm(s) return (tostring(s):lower():gsub("[%s_%-]", "")) end
+
 local function findTool(name)
-    name = name:lower()
+    name = norm(name)
     for _, cont in ipairs({player.Character, player:FindFirstChildOfClass("Backpack")}) do
         if cont then
             for _, t in ipairs(cont:GetChildren()) do
-                if t:IsA("Tool") and t.Name:lower():find(name, 1, true) then return t end
+                if t:IsA("Tool") and norm(t.Name):find(name, 1, true) then return t end
             end
         end
     end
@@ -882,19 +889,48 @@ task.spawn(function()
 end)
 
 ------------------------------------------------------------------
--- Blood-клик: при уроне мгновенно ем Blood fruit
+-- Blood-клик: при уроне мгновенно ем Blood fruit (Bloodfruit / Blood fruit)
 ------------------------------------------------------------------
 local REACTION_MS = 0.0000001   -- задержка реакции; всё что <= 0.001 мс = вообще без ожидания
-local bf = {on = false, holding = false, prevTool = nil, lastDmg = 0, last = {}, name = "Blood fruit"}
+local bf = {on = false, holding = false, prevTool = nil, lastDmg = 0, last = {}, name = "Bloodfruit"}
+
+-- если Tool не найден: пробуем нажать кнопку Blood fruit в интерфейсе игры
+local bfGui, bfGuiScan = nil, 0
+local function clickBloodGui()
+    if not VIM then return false end
+    if not (bfGui and bfGui.Parent) and os.clock() >= bfGuiScan then
+        bfGuiScan = os.clock() + 1
+        local pg = player:FindFirstChildOfClass("PlayerGui")
+        if pg then
+            for _, o in ipairs(pg:GetDescendants()) do
+                if o:IsA("GuiObject") and o.AbsoluteSize.X > 0
+                    and not (root and o:IsDescendantOf(root)) then
+                    local txt = (o:IsA("TextLabel") or o:IsA("TextButton")) and norm(o.Text) or ""
+                    if norm(o.Name):find("bloodfruit", 1, true) or txt:find("bloodfruit", 1, true) then
+                        bfGui = o
+                        break
+                    end
+                end
+            end
+        end
+    end
+    if bfGui and bfGui.Parent then
+        local p = bfGui.AbsolutePosition + bfGui.AbsoluteSize / 2
+        VIM:SendTouchEvent(TOUCH_ID, 0, p.X, p.Y)
+        task.delay(0.02, function() pcall(VIM.SendTouchEvent, VIM, TOUCH_ID, 2, p.X, p.Y) end)
+        return true
+    end
+    return false
+end
 
 local function bloodEat()
     local hum = currentHumanoid()
     if not hum or hum.Health <= 0 then return end
     local tool = findTool(bf.name)
     if not tool then
-        if os.clock() - (bf.warnAt or 0) > 3 then
+        if not clickBloodGui() and os.clock() - (bf.warnAt or 0) > 3 then
             bf.warnAt = os.clock()
-            if notify then notify("Не нашёл Tool: " .. bf.name, false) end
+            if notify then notify("Blood fruit не найден", false) end
         end
         return
     end
@@ -960,7 +996,7 @@ task.spawn(function()
                 local hum = currentHumanoid()
                 if hum and hum.Health > 0 and os.clock() - bf.lastDmg < 1.5 then
                     local tool = hum.Parent:FindFirstChildOfClass("Tool")
-                    if tool and tool.Name:lower():find(bf.name:lower(), 1, true) then
+                    if tool and norm(tool.Name):find(norm(bf.name), 1, true) then
                         pcall(tool.Activate, tool)
                     else
                         pcall(bloodEat)
@@ -1014,7 +1050,7 @@ local function label(parent, text, size, pos, textSize, color, align)
     }, parent)
 end
 
-local root = make("ScreenGui", {
+root = make("ScreenGui", {
     Name = "CzxBoogaFPS",
     ResetOnSpawn = false,
     IgnoreGuiInset = true,
@@ -1238,7 +1274,7 @@ local COLUMNS = {
     {name = "Графика", items = {"shadows", "post", "particles", "textures", "fog", "highlight"}},
     {name = "Скорость", items = {"fpscap", "cull", "cpu", "gpu", "renderer", "memory", "chunks"}},
     {name = "Бой", items = {"autoclick", "bloodfruit", "autoheal"}},
-    {name = "Прочее", items = {"hud", "boost", "unload"}},
+    {name = "Прочее", items = {"hud", "csettings", "boost", "unload"}},
 }
 
 local refreshItem, refreshActive
@@ -1297,6 +1333,7 @@ ITEMS.autoclick = {
     },
 }
 
+-- Blood-клик: просто включил, и само хилит (без настроек)
 ITEMS.bloodfruit = {
     name = "bloodfruit", label = "Blood-клик", desc = "Урон → сразу ем Blood fruit",
     get = function() return bf.on end,
@@ -1306,17 +1343,12 @@ ITEMS.bloodfruit = {
             bf.last = {}
             bf.hookAt = 0
             pcall(hookBlood)
-            notify("Blood-клик ON: ем \"" .. bf.name .. "\" при каждом уроне", true)
+            notify("Blood-клик ON: ем Blood fruit при каждом уроне", true)
         else
             bloodRelease()
         end
         refreshItem("bloodfruit")
     end,
-    settings = {
-        {type = "text", label = "Имя Tool (фрукта)",
-            get = function() return bf.name end,
-            set = function(v) bf.name = v end},
-    },
 }
 
 ITEMS.autoheal = {
@@ -1352,6 +1384,12 @@ ITEMS.hud = {
         {type = "toggle", label = "Inventory (Tools)", get = function() return hudVals.Inventory end,
             set = function(v) hudVals.Inventory = v; applyHUD() end},
     },
+}
+
+ITEMS.csettings = {
+    name = "csettings", label = "Settings", desc = "Информация о создателе",
+    instant = true,
+    set = function() if showCat then showCat() end end,
 }
 
 ITEMS.boost = {
@@ -1651,66 +1689,119 @@ setAC = function(on)
     notify(on and ("Авто-клик ON: " .. ac.mode .. ", " .. ac.cps .. " кл/с") or "Авто-клик OFF", on)
 end
 
-local LEON_IMAGE = "rbxassetid://0"   -- <-- вставьте сюда ID своей картинки Леона (rbxassetid://123456)
-local BLUE = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(8, 50, 190)),
-    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(30, 140, 255)),
-    ColorSequenceKeypoint.new(0.50, Color3.fromRGB(150, 225, 255)),
-    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(30, 140, 255)),
-    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(8, 50, 190)),
+-- RGB-палитра (переливается и у кнопки, и у текста в Settings)
+local LEON_IMAGE = "rbxassetid://0"   -- <-- ID Леона (PNG с ПРОЗРАЧНЫМ фоном!), например rbxassetid://123456
+local RGB = ColorSequence.new({
+    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(255, 0, 0)),
+    ColorSequenceKeypoint.new(0.17, Color3.fromRGB(255, 255, 0)),
+    ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0, 255, 0)),
+    ColorSequenceKeypoint.new(0.50, Color3.fromRGB(0, 255, 255)),
+    ColorSequenceKeypoint.new(0.67, Color3.fromRGB(0, 0, 255)),
+    ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255, 0, 255)),
+    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
 })
 
 local openBtn = make("TextButton", {
     AnchorPoint = Vector2.new(0.5, 0.5),
     Size = UDim2.fromOffset(54, 54),
     Position = UDim2.new(0, 150, 0.62, 90),
-    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    BackgroundTransparency = 1,
     AutoButtonColor = false,
     Text = "",
     ZIndex = 45,
 }, root)
 Corner(openBtn, 27)
-local btnGrad = make("UIGradient", {Color = BLUE}, openBtn)
-local btnStroke = Stroke(openBtn, Color3.fromRGB(255, 255, 255), 2)
-local strokeGrad = make("UIGradient", {Color = BLUE}, btnStroke)
+local btnStroke = Stroke(openBtn, Color3.fromRGB(255, 255, 255), 3)
+local strokeGrad = make("UIGradient", {Color = RGB}, btnStroke)
 
-local hasLeon = LEON_IMAGE ~= "" and LEON_IMAGE ~= "rbxassetid://0"
-local leon = make("ImageLabel", {
+make("ImageLabel", {   -- Леон, без фона и без буквы L
     AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(40, 40),
+    Size = UDim2.fromOffset(46, 46),
     BackgroundTransparency = 1,
-    Image = hasLeon and LEON_IMAGE or "",
+    Image = LEON_IMAGE,
     ScaleType = Enum.ScaleType.Fit,
     ZIndex = 46,
 }, openBtn)
-Corner(leon, 20)
-if not hasLeon then
-    make("TextLabel", {   -- пока нет картинки Леона
-        BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
-        Font = Enum.Font.GothamBlack, Text = "L", TextSize = 24,
-        TextColor3 = Color3.fromRGB(255, 255, 255), ZIndex = 46,
-    }, openBtn)
-end
 addScale(openBtn, hudScale)
 makeDraggable(openBtn, function() setMenu(not menuOpen) end)
 
-task.spawn(function()   -- перелив: вращение градиента (30 раз в секунду, лёгкая нагрузка)
+task.spawn(function()   -- RGB-перелив (30 раз в секунду, лёгкая нагрузка)
     local t = 0
     while alive do
         t += 1 / 30
-        btnGrad.Rotation = (t * 110) % 360
-        btnGrad.Offset = Vector2.new(math.sin(t * 2) * 0.25, 0)
         strokeGrad.Rotation = (-t * 170) % 360
+        for _, g in ipairs(rainbowGrads) do
+            if g.Parent then g.Rotation = (t * 120) % 360 end
+        end
         task.wait(1 / 30)
     end
 end)
+
+------------------------------------------------------------------
+-- Settings: кошка на весь экран, через 3 сек блюр + "мяу" + RGB-текст
+------------------------------------------------------------------
+local CAT_IMAGE = "rbxassetid://0"   -- <-- ID картинки кошки
+local catGui, catBlur, catToken = nil, nil, 0
+
+closeCat = function()
+    catToken += 1
+    if catGui then catGui:Destroy() end
+    if catBlur then catBlur:Destroy() end
+    catGui, catBlur = nil, nil
+    table.clear(rainbowGrads)
+end
+
+showCat = function()
+    if catGui then return end
+    setMenu(false)
+    catToken += 1
+    local my = catToken
+    catGui = make("TextButton", {
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+        Text = "", AutoButtonColor = false, ZIndex = 100,
+    }, root)
+    catGui.Activated:Connect(closeCat)   -- тап по экрану закрывает
+    make("ImageLabel", {
+        Size = UDim2.fromScale(1, 1), BackgroundTransparency = 1,
+        Image = CAT_IMAGE, ScaleType = Enum.ScaleType.Crop, ZIndex = 101,
+    }, catGui)
+    local dim = make("Frame", {
+        Size = UDim2.fromScale(1, 1), BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 1, ZIndex = 102,
+    }, catGui)
+    local meow = make("TextLabel", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.4),
+        Size = UDim2.fromScale(0.9, 0.2), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBlack, Text = "мяу мяу мяу", TextScaled = true,
+        TextColor3 = Color3.new(1, 1, 1), TextTransparency = 1, ZIndex = 103,
+    }, catGui)
+    local credit = make("TextLabel", {
+        AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.fromScale(0.5, 0.62),
+        Size = UDim2.fromScale(0.9, 0.18), BackgroundTransparency = 1,
+        Font = Enum.Font.GothamBlack, TextScaled = true,
+        Text = "создатель чита teddy\nтг создателя @bogteddy",
+        TextColor3 = Color3.new(1, 1, 1), TextTransparency = 1, ZIndex = 103,
+    }, catGui)
+    rainbowGrads[#rainbowGrads + 1] = make("UIGradient", {Color = RGB}, credit)
+
+    task.delay(3, function()
+        if catToken ~= my or not catGui then return end
+        catBlur = make("BlurEffect", {Name = "CzxCatBlur", Size = 0}, Lighting)
+        local ti = TweenInfo.new(0.6)
+        TweenService:Create(catBlur, ti, {Size = 28}):Play()
+        TweenService:Create(dim, ti, {BackgroundTransparency = 0.45}):Play()
+        TweenService:Create(meow, ti, {TextTransparency = 0}):Play()
+        TweenService:Create(credit, ti, {TextTransparency = 0}):Play()
+    end)
+end
 
 ------------------------------------------------------------------
 -- Выгрузка
 ------------------------------------------------------------------
 Unload = function()
     if not alive then return end
+    pcall(closeCat)
     for _, f in ipairs(order) do pcall(setFeature, f, false) end
     ac.on, hl.on, bf.on = false, false, false
     pcall(bloodRelease)
@@ -1724,5 +1815,5 @@ root.Destroying:Connect(Unload)
 applyHUD()
 refreshActive()
 refreshMaster()
-notify("CzxstyleUI загружен. Синяя кнопка с Леоном открывает меню", true)
-print("[Booga FPS v6] Loaded. Leon button = menu.")
+notify("CzxstyleUI загружен. RGB-кнопка с Леоном открывает меню", true)
+print("[Booga FPS v7] Loaded. Leon button = menu.")
