@@ -1,4 +1,4 @@
--- Booga Booga Mobile FPS Booster v2 (Delta / Android)
+-- Booga Booga Mobile FPS Booster v3 (Delta / Samsung Galaxy A06)
 -- Каждый переключатель реально меняет настройки и показывает в статусе,
 -- сколько объектов/настроек изменено и сколько заблокировано executor'ом.
 -- Всё обратимо: выключение возвращает оригинальные значения.
@@ -175,6 +175,91 @@ end
 -- Функции
 ------------------------------------------------------------------
 
+-- Профиль: Samsung Galaxy A06 (Helio G85, Mali-G52 MC2, 4 GB RAM, 720p, 90 Hz)
+local CFG = {
+    cullHide = 220, cullShow = 190, cullMaxPart = 40,  -- дальность прорисовки, studs
+    animFar = 120,                                     -- заморозка анимаций
+    texFar = 200, texNear = 150,                       -- выгрузка текстур (мало RAM)
+    gcEvery = 15,                                      -- сборка мусора, сек
+    fpsCap = 999,
+}
+
+-- 0. Снятие лимита FPS
+newFeature("fpscap", "Снять лимит FPS", "setfpscap + TaskSchedulerTargetFps", {
+    on = function(f)
+        if typeof(setfpscap) == "function" then
+            if pcall(setfpscap, CFG.fpsCap) then f.okc += 1 else f.fail += 1 end
+        else
+            f.fail += 1
+            f.note = "setfpscap нет в Delta"
+        end
+        if typeof(setfflag) == "function" then
+            if pcall(setfflag, "TaskSchedulerTargetFps", tostring(CFG.fpsCap)) then
+                f.okc += 1
+            else
+                f.fail += 1
+            end
+        end
+    end,
+    off = function()
+        if typeof(setfpscap) == "function" then pcall(setfpscap, 60) end
+        if typeof(setfflag) == "function" then pcall(setfflag, "TaskSchedulerTargetFps", "60") end
+    end,
+})
+
+-- 0b. Дальность прорисовки: далёкие детали не рисуются (главный буст GPU)
+local cullList, cullCursor, cullSeen, cullHidden = {}, 1, weak(), weak()
+local cullN = 0
+newFeature("cull", "Дальность прорисовки", "Скрыть детали дальше " .. CFG.cullHide .. " studs", {
+    interval = 0.25,
+    apply = function(f, obj)
+        if obj:IsA("BasePart") and not obj:IsA("Terrain") and not cullSeen[obj] then
+            local s = obj.Size
+            if math.max(s.X, s.Y, s.Z) <= CFG.cullMaxPart and not inCharacter(obj) then
+                cullSeen[obj] = true
+                cullList[#cullList + 1] = obj
+                f.count += 1
+            end
+        end
+    end,
+    tick = function()
+        local cam = Workspace.CurrentCamera
+        if not cam then return end
+        local cpos = cam.CFrame.Position
+        for _ = 1, math.min(#cullList, 800) do
+            if cullCursor > #cullList then cullCursor = 1 end
+            local o = cullList[cullCursor]
+            if not o then break end
+            if not o.Parent then
+                if cullHidden[o] then cullN -= 1 end
+                cullHidden[o], cullSeen[o] = nil, nil
+                cullList[cullCursor] = cullList[#cullList]
+                cullList[#cullList] = nil
+            else
+                local d = (o.Position - cpos).Magnitude
+                if d > CFG.cullHide then
+                    if not cullHidden[o] then
+                        cullHidden[o] = true
+                        cullN += 1
+                        pcall(function() o.LocalTransparencyModifier = 1 end)
+                    end
+                elseif d < CFG.cullShow and cullHidden[o] then
+                    cullHidden[o] = nil
+                    cullN -= 1
+                    pcall(function() o.LocalTransparencyModifier = 0 end)
+                end
+                cullCursor += 1
+            end
+        end
+    end,
+    off = function()
+        for _, o in ipairs(cullList) do
+            if cullHidden[o] then pcall(function() o.LocalTransparencyModifier = 0 end) end
+        end
+        cullList, cullCursor, cullSeen, cullHidden, cullN = {}, 1, weak(), weak(), 0
+    end,
+})
+
 -- 1. Тени
 newFeature("shadows", "Тени", "GlobalShadows + тени у каждой детали и света", {
     on = function(f)
@@ -256,7 +341,7 @@ local function unfreezeAnim(an)
     end
 end
 
-newFeature("cpu", "CPU", "Физика-throttle + заморозка анимаций дальше 150 studs", {
+newFeature("cpu", "CPU", "Физика-throttle + заморозка анимаций дальше " .. CFG.animFar .. " studs", {
     interval = 0.5,
     on = function(f)
         local ph = settings().Physics
@@ -281,7 +366,7 @@ newFeature("cpu", "CPU", "Физика-throttle + заморозка анима�
                 local m = an:FindFirstAncestorOfClass("Model")
                 local root = m and (m:FindFirstChild("HumanoidRootPart") or m.PrimaryPart)
                 if root then
-                    if (root.Position - cpos).Magnitude > 150 then
+                    if (root.Position - cpos).Magnitude > CFG.animFar then
                         farSet[an] = true
                         freezeAnim(an)
                     elseif farSet[an] then
@@ -302,6 +387,11 @@ newFeature("cpu", "CPU", "Физика-throttle + заморозка анима�
 newFeature("gpu", "GPU", "Quality Level 1, меш-детали, отражения, вода, Compatibility", {
     on = function(f)
         local r = settings().Rendering
+        local okS, ugs = pcall(function() return UserSettings():GetService("UserGameSettings") end)
+        if okS then
+            gset(f, ugs, "SavedQualityLevel", E("SavedQualityLevel", "QualityLevel1"))
+            gset(f, ugs, "GraphicsQualityLevel", 1)
+        end
         gset(f, r, "QualityLevel", E("QualityLevel", "Level01"))
         gset(f, r, "MeshPartDetailLevel", E("MeshPartDetailLevel", "Level04"))
         gset(f, Lighting, "EnvironmentDiffuseScale", 0)
@@ -363,7 +453,7 @@ end
 newFeature("memory", "Память", "GC + выгрузка текстур далёких объектов", {
     interval = 2,
     on = function(f)
-        f.gcAt = os.clock() + 20
+        f.gcAt = os.clock() + CFG.gcEvery
         local ok, b, a = collect()
         if ok then
             f.okc += 1
@@ -392,7 +482,7 @@ newFeature("memory", "Память", "GC + выгрузка текстур да�
     tick = function(f)
         local now = os.clock()
         if now >= (f.gcAt or 0) then
-            f.gcAt = now + 20
+            f.gcAt = now + CFG.gcEvery
             collect()
         end
         local cam = Workspace.CurrentCamera
@@ -410,7 +500,7 @@ newFeature("memory", "Память", "GC + выгрузка текстур да�
                 local a = texAnchor(o)
                 if a then
                     local d = (a.Position - cpos).Magnitude
-                    if d > 250 then setTex(o, true) elseif d < 180 then setTex(o, false) end
+                    if d > CFG.texFar then setTex(o, true) elseif d < CFG.texNear then setTex(o, false) end
                 end
                 texCursor += 1
             end
@@ -526,7 +616,8 @@ connections[#connections + 1] = RunService.Heartbeat:Connect(function(dt)
     if t0 >= nextHud and hudLabel then
         nextHud = t0 + 0.5
         hudLabel.Text = ("FPS %.0f  |  %.0f MB"):format(fpsN / fpsAcc, Stats:GetTotalMemoryUsageMb())
-            .. (texUnloaded > 0 and ("  |  выгружено: " .. texUnloaded) or "")
+            .. (texUnloaded > 0 and ("  |  tex-" .. texUnloaded) or "")
+            .. (cullN > 0 and ("  |  скрыто " .. cullN) or "")
         fpsAcc, fpsN = 0, 0
     end
 end)
@@ -760,3 +851,4 @@ gui.Destroying:Connect(function()
 end)
 
 print("[Mobile FPS Booster v2] Loaded. Open the FPS button.")
+
