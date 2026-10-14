@@ -1,4 +1,4 @@
--- Booga Booga FPS Booster v5 + CzxstyleUI HUD
+-- Booga Booga FPS Booster v6 + CzxstyleUI HUD (Leon button, Blood-click)
 -- Delta / Samsung Galaxy A06. Меню: круглая кнопка CZX. Клавиатура не нужна.
 -- Каждая функция показывает в уведомлении, что именно изменила,
 -- и всё возвращается обратно при выключении или "Выгрузить".
@@ -882,6 +882,98 @@ task.spawn(function()
 end)
 
 ------------------------------------------------------------------
+-- Blood-клик: при уроне мгновенно ем Blood fruit
+------------------------------------------------------------------
+local REACTION_MS = 0.0000001   -- задержка реакции; всё что <= 0.001 мс = вообще без ожидания
+local bf = {on = false, holding = false, prevTool = nil, lastDmg = 0, last = {}, name = "Blood fruit"}
+
+local function bloodEat()
+    local hum = currentHumanoid()
+    if not hum or hum.Health <= 0 then return end
+    local tool = findTool(bf.name)
+    if not tool then
+        if os.clock() - (bf.warnAt or 0) > 3 then
+            bf.warnAt = os.clock()
+            if notify then notify("Не нашёл Tool: " .. bf.name, false) end
+        end
+        return
+    end
+    local c = player.Character
+    if tool.Parent ~= c then
+        if not bf.holding then bf.prevTool = c and c:FindFirstChildOfClass("Tool") end
+        hum:EquipTool(tool)
+    end
+    bf.holding = true
+    tool:Activate()
+end
+
+local function bloodOnHealth(src, hp)
+    local prev = bf.last[src]
+    bf.last[src] = hp
+    if not bf.on or not prev or hp >= prev - 0.01 then return end
+    bf.lastDmg = os.clock()
+    if REACTION_MS > 0.001 then task.wait(REACTION_MS / 1000) end
+    pcall(bloodEat)
+end
+
+local bfHumConn, bfLblConn, bfHum, bfLbl, bfLblScan = nil, nil, nil, nil, 0
+local function hookBlood()
+    local hum = currentHumanoid()
+    if hum and hum ~= bfHum then
+        if bfHumConn then bfHumConn:Disconnect() end
+        bfHum = hum
+        bf.last.hum = hum.Health
+        bfHumConn = hum.HealthChanged:Connect(function(h) bloodOnHealth("hum", h) end)
+    end
+    if not (bfLbl and bfLbl.Parent) and os.clock() >= bfLblScan then
+        bfLblScan = os.clock() + 3
+        local l = findHpLabel()
+        if l then
+            if bfLblConn then bfLblConn:Disconnect() end
+            bfLbl = l
+            bf.last.gui = tonumber(l.Text)
+            bfLblConn = l:GetPropertyChangedSignal("Text"):Connect(function()
+                local v = tonumber(l.Text)
+                if v then bloodOnHealth("gui", v) end
+            end)
+        end
+    end
+end
+
+local function bloodRelease()
+    if not bf.holding then return end
+    bf.holding = false
+    local prev, hum = bf.prevTool, currentHumanoid()
+    bf.prevTool = nil
+    if prev and prev.Parent and hum then pcall(function() hum:EquipTool(prev) end) end
+end
+
+task.spawn(function()
+    while alive do
+        task.wait()   -- один кадр: жмём, пока идёт урон
+        if bf.on then
+            if os.clock() - (bf.hookAt or 0) > 0.5 then
+                bf.hookAt = os.clock()
+                pcall(hookBlood)
+            end
+            if bf.holding then
+                local hum = currentHumanoid()
+                if hum and hum.Health > 0 and os.clock() - bf.lastDmg < 1.5 then
+                    local tool = hum.Parent:FindFirstChildOfClass("Tool")
+                    if tool and tool.Name:lower():find(bf.name:lower(), 1, true) then
+                        pcall(tool.Activate, tool)
+                    else
+                        pcall(bloodEat)
+                    end
+                else
+                    bloodRelease()
+                end
+            end
+        end
+    end
+end)
+
+------------------------------------------------------------------
 -- Интерфейс в стиле CzxstyleUI (под сенсорный экран)
 ------------------------------------------------------------------
 local COL = {
@@ -1048,10 +1140,10 @@ notify = function(msg, good)
 end
 
 ------------------------------------------------------------------
--- HUD (Watermark, TargetHUD, Active, Inventory)
+-- HUD (Inventory)
 ------------------------------------------------------------------
 local hud = {on = true}
-local hudVals = {Watermark = true, TargetHUD = true, Active = true, Inventory = false}
+local hudVals = {Inventory = false}
 
 local function hudPanel(name, size, pos)
     local p = make("Frame", {
@@ -1072,60 +1164,9 @@ end
 local S0 = hudScale()
 local HX = 110
 
--- Watermark
-local Watermark = hudPanel("Watermark", UDim2.fromOffset(0, 22), UDim2.fromOffset(HX, 118))
-Watermark.AutomaticSize = Enum.AutomaticSize.X
-local wmFps, wmMem
-do
-    make("UIListLayout", {
-        FillDirection = Enum.FillDirection.Horizontal,
-        VerticalAlignment = Enum.VerticalAlignment.Center,
-        SortOrder = Enum.SortOrder.LayoutOrder,
-        Padding = UDim.new(0, 6),
-    }, Watermark)
-    make("UIPadding", {PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8)}, Watermark)
-    make("ImageLabel", {
-        BackgroundTransparency = 1, Size = UDim2.fromOffset(14, 14),
-        Image = HUD_ICON, ImageColor3 = COL.accent, LayoutOrder = 1, ZIndex = 3,
-    }, Watermark)
-    local function part(text, ord, color)
-        return make("TextLabel", {
-            BackgroundTransparency = 1, AutomaticSize = Enum.AutomaticSize.X,
-            Size = UDim2.new(0, 0, 1, 0), Font = FONT, TextSize = 12, Text = text,
-            TextColor3 = color or COL.white, LayoutOrder = ord, ZIndex = 3,
-        }, Watermark)
-    end
-    part(CLIENT_NAME, 2, COL.accent)
-    part(player.Name, 3)
-    part("FPS", 4, Color3.fromRGB(170, 170, 178))
-    wmFps = part("60", 5)
-    part("MB", 6, Color3.fromRGB(170, 170, 178))
-    wmMem = part("0", 7)
-end
-
--- TargetHUD
-local TargetPanel = hudPanel("TargetHUD", UDim2.fromOffset(175, 42), UDim2.fromOffset(HX, 118 + 32 * S0))
-local headImg = make("ImageLabel", {
-    BackgroundColor3 = Color3.fromRGB(35, 35, 40),
-    Size = UDim2.fromOffset(30, 30), Position = UDim2.fromOffset(6, 6), ZIndex = 3,
-}, TargetPanel)
-Corner(headImg, 5)
-local nameLbl = label(TargetPanel, "", UDim2.fromOffset(128, 14), UDim2.fromOffset(42, 5), 13)
-local hpLbl = label(TargetPanel, "", UDim2.fromOffset(128, 12), UDim2.fromOffset(42, 18), 11,
-    Color3.fromRGB(190, 190, 196))
-local barBg = make("Frame", {
-    Size = UDim2.fromOffset(124, 5), Position = UDim2.fromOffset(42, 32),
-    BackgroundColor3 = Color3.fromRGB(40, 40, 45), BorderSizePixel = 0, ZIndex = 3,
-}, TargetPanel)
-Corner(barBg, 2)
-local barFill = make("Frame", {
-    Size = UDim2.fromScale(1, 1), BackgroundColor3 = COL.accent, BorderSizePixel = 0, ZIndex = 4,
-}, barBg)
-Corner(barFill, 2)
-
 -- Inventory
 local InventoryPanel = hudPanel("Inventory", UDim2.fromOffset(86, 24),
-    UDim2.fromOffset(HX, 118 + 32 * S0 + 52 * S0))
+    UDim2.fromOffset(HX, 118))
 local invSlots = {}
 for i = 1, 4 do
     local s = make("ImageLabel", {
@@ -1137,78 +1178,11 @@ for i = 1, 4 do
     invSlots[i] = s
 end
 
--- Active (замена панели биндов: на телефоне нет клавиатуры)
-local ActivePanel = hudPanel("Active", UDim2.fromOffset(170, 0),
-    UDim2.fromOffset(HX, 118 + 32 * S0 + 52 * S0 + 34 * S0))
-ActivePanel.AutomaticSize = Enum.AutomaticSize.Y
-make("UIListLayout", {SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 2)}, ActivePanel)
-make("UIPadding", {
-    PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
-    PaddingTop = UDim.new(0, 5), PaddingBottom = UDim.new(0, 6),
-}, ActivePanel)
-do
-    local t = make("TextLabel", {
-        Size = UDim2.new(1, 0, 0, 18), BackgroundTransparency = 1, Text = "●  ACTIVE",
-        TextColor3 = COL.accent, Font = Enum.Font.GothamBlack, TextSize = 11,
-        TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 0, ZIndex = 3,
-    }, ActivePanel)
-end
-
-local hudPanels = {
-    Watermark = Watermark, TargetHUD = TargetPanel,
-    Active = ActivePanel, Inventory = InventoryPanel,
-}
+local hudPanels = {Inventory = InventoryPanel}
 local function applyHUD()
     for k, p in pairs(hudPanels) do
         p.Visible = hud.on and hudVals[k] == true
     end
-end
-
-local thumbCache, currentTargetId = {}, nil
-local function findTarget()
-    local char = player.Character
-    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
-    if not rootPart then return player, char end
-    local best, bestDist, bestChar = nil, TARGET_RANGE, nil
-    for _, p in ipairs(Players:GetPlayers()) do
-        if p ~= player and p.Character then
-            local r = p.Character:FindFirstChild("HumanoidRootPart")
-            local h = p.Character:FindFirstChildOfClass("Humanoid")
-            if r and h and h.Health > 0 then
-                local d = (r.Position - rootPart.Position).Magnitude
-                if d < bestDist then best, bestDist, bestChar = p, d, p.Character end
-            end
-        end
-    end
-    if best then return best, bestChar end
-    return player, char
-end
-
-local function updateTarget()
-    local tPlayer, tChar = findTarget()
-    local hum = tChar and tChar:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-    if currentTargetId ~= tPlayer.UserId then
-        currentTargetId = tPlayer.UserId
-        local uid = tPlayer.UserId
-        if thumbCache[uid] then
-            headImg.Image = thumbCache[uid]
-        else
-            task.spawn(function()
-                local ok, img = pcall(function()
-                    return (Players:GetUserThumbnailAsync(uid, Enum.ThumbnailType.HeadShot,
-                        Enum.ThumbnailSize.Size100x100))
-                end)
-                thumbCache[uid] = ok and img or ""
-                if currentTargetId == uid then headImg.Image = thumbCache[uid] end
-            end)
-        end
-    end
-    local name = tPlayer.Name
-    if #name > 12 then name = name:sub(1, 12) end
-    nameLbl.Text = name
-    barFill.Size = UDim2.fromScale(math.clamp(hum.Health / math.max(hum.MaxHealth, 1), 0, 1), 1)
-    hpLbl.Text = math.floor(hum.Health) .. " HP"
 end
 
 local function updateInventory()
@@ -1235,11 +1209,6 @@ task.spawn(function()
         task.wait(0.25)
         n += 1
         if hud.on then
-            if hudVals.Watermark and n % 2 == 0 then
-                wmFps.Text = ("%.0f"):format(fpsValue)
-                wmMem.Text = ("%.0f"):format(Stats:GetTotalMemoryUsageMb())
-            end
-            if hudVals.TargetHUD then pcall(updateTarget) end
             if hudVals.Inventory and n % 2 == 0 then pcall(updateInventory) end
         end
     end
@@ -1248,38 +1217,18 @@ end)
 ------------------------------------------------------------------
 -- Круг для авто-клика и быстрая кнопка AC
 ------------------------------------------------------------------
+-- Невидимая точка для авто-клика (центр экрана), ничего не рисуется
 circle = make("Frame", {
     AnchorPoint = Vector2.new(0.5, 0.5),
     Size = UDim2.fromOffset(52, 52),
     Position = UDim2.new(0.5, 0, 0.5, 0),
-    BackgroundColor3 = COL.accent,
-    BackgroundTransparency = 0.75,
+    BackgroundTransparency = 1,
     BorderSizePixel = 0,
-    Active = true,
+    Active = false,
     ZIndex = 5,
 }, root)
-Corner(circle, 26)
-Stroke(circle, COL.accent, 2)
 addScale(circle, hudScale)
-makeDraggable(circle, nil, function() return not ac.on end)
-
-local function updateCircle() circle.Visible = ac.on or ac.show end
-updateCircle()
-
-local acBtn = make("TextButton", {
-    AnchorPoint = Vector2.new(0.5, 0.5),
-    Size = UDim2.fromOffset(40, 40),
-    Position = UDim2.new(0, 150, 0.62, 0),
-    BackgroundColor3 = COL.bg,
-    Text = "AC",
-    TextColor3 = COL.on,
-    TextSize = 13,
-    Font = FONT,
-    ZIndex = 45,
-}, root)
-Corner(acBtn, 20)
-Stroke(acBtn, COL.accent, 1.5)
-addScale(acBtn, hudScale)
+local function updateCircle() end
 
 ------------------------------------------------------------------
 -- Элементы меню
@@ -1288,7 +1237,7 @@ local ITEMS = {}
 local COLUMNS = {
     {name = "Графика", items = {"shadows", "post", "particles", "textures", "fog", "highlight"}},
     {name = "Скорость", items = {"fpscap", "cull", "cpu", "gpu", "renderer", "memory", "chunks"}},
-    {name = "Бой", items = {"autoclick", "autoheal"}},
+    {name = "Бой", items = {"autoclick", "bloodfruit", "autoheal"}},
     {name = "Прочее", items = {"hud", "boost", "unload"}},
 }
 
@@ -1339,9 +1288,6 @@ ITEMS.autoclick = {
     get = function() return ac.on end,
     set = function(on) setAC(on) end,
     settings = {
-        {type = "toggle", label = "Показывать круг",
-            get = function() return ac.show end,
-            set = function(v) ac.show = v; updateCircle() end},
         {type = "choice", label = "Режим клика", options = MODES,
             get = function() return ac.mode end,
             set = function(v) ac.mode = v end},
@@ -1351,11 +1297,34 @@ ITEMS.autoclick = {
     },
 }
 
+ITEMS.bloodfruit = {
+    name = "bloodfruit", label = "Blood-клик", desc = "Урон → сразу ем Blood fruit",
+    get = function() return bf.on end,
+    set = function(on)
+        bf.on = on
+        if on then
+            bf.last = {}
+            bf.hookAt = 0
+            pcall(hookBlood)
+            notify("Blood-клик ON: ем \"" .. bf.name .. "\" при каждом уроне", true)
+        else
+            bloodRelease()
+        end
+        refreshItem("bloodfruit")
+    end,
+    settings = {
+        {type = "text", label = "Имя Tool (фрукта)",
+            get = function() return bf.name end,
+            set = function(v) bf.name = v end},
+    },
+}
+
 ITEMS.autoheal = {
     name = "autoheal", label = "Авто-хил", desc = "Только когда здоровье падает",
     get = function() return hl.on end,
     set = function(on)
         hl.on = on
+        refreshItem("autoheal")
         if on then
             notify(("Авто-хил ON. Хил: %s, оружие: %s"):format(hl.item, hl.weapon), true)
         elseif hl.holding then
@@ -1376,16 +1345,10 @@ ITEMS.autoheal = {
 }
 
 ITEMS.hud = {
-    name = "hud", label = "HUD", desc = "Панели FPS, цель, активные",
+    name = "hud", label = "HUD", desc = "Панель инвентаря",
     get = function() return hud.on end,
     set = function(on) hud.on = on; applyHUD() end,
     settings = {
-        {type = "toggle", label = "Watermark", get = function() return hudVals.Watermark end,
-            set = function(v) hudVals.Watermark = v; applyHUD() end},
-        {type = "toggle", label = "TargetHUD", get = function() return hudVals.TargetHUD end,
-            set = function(v) hudVals.TargetHUD = v; applyHUD() end},
-        {type = "toggle", label = "Active (включённые функции)", get = function() return hudVals.Active end,
-            set = function(v) hudVals.Active = v; applyHUD() end},
         {type = "toggle", label = "Inventory (Tools)", get = function() return hudVals.Inventory end,
             set = function(v) hudVals.Inventory = v; applyHUD() end},
     },
@@ -1416,31 +1379,7 @@ refreshItem = function(name)
     it.ui.btn.BackgroundTransparency = on and 0.1 or 1
 end
 
-refreshActive = function()
-    for _, r in ipairs(activeRows) do r:Destroy() end
-    activeRows = {}
-    local n = 0
-    for _, col in ipairs(COLUMNS) do
-        for _, name in ipairs(col.items) do
-            local it = ITEMS[name]
-            if it and not it.instant and name ~= "hud" and name ~= "boost" and it.get() then
-                n += 1
-                activeRows[#activeRows + 1] = make("TextLabel", {
-                    Size = UDim2.new(1, 0, 0, 17), BackgroundTransparency = 1,
-                    Text = "●  " .. it.label, TextColor3 = COL.white, Font = FONT, TextSize = 12,
-                    TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = n, ZIndex = 3,
-                }, ActivePanel)
-            end
-        end
-    end
-    if n == 0 then
-        activeRows[1] = make("TextLabel", {
-            Size = UDim2.new(1, 0, 0, 17), BackgroundTransparency = 1,
-            Text = "нет активных", TextColor3 = Color3.fromRGB(110, 110, 116), Font = FONT,
-            TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1, ZIndex = 3,
-        }, ActivePanel)
-    end
-end
+refreshActive = function() end
 
 for key, f in pairs(features) do
     f.refresh = function()
@@ -1706,32 +1645,66 @@ end
 ------------------------------------------------------------------
 setAC = function(on)
     ac.on = on
-    circle.Interactable = not on   -- во время работы круг не перехватывает касания
-    circle.Active = not on
     updateCircle()
-    acBtn.BackgroundColor3 = on and COL.accent or COL.bg
-    acBtn.TextColor3 = on and COL.bg or COL.on
     refreshItem("autoclick")
     refreshActive()
     notify(on and ("Авто-клик ON: " .. ac.mode .. ", " .. ac.cps .. " кл/с") or "Авто-клик OFF", on)
 end
-makeDraggable(acBtn, function() setAC(not ac.on) end)
+
+local LEON_IMAGE = "rbxassetid://0"   -- <-- вставьте сюда ID своей картинки Леона (rbxassetid://123456)
+local BLUE = ColorSequence.new({
+    ColorSequenceKeypoint.new(0.00, Color3.fromRGB(8, 50, 190)),
+    ColorSequenceKeypoint.new(0.25, Color3.fromRGB(30, 140, 255)),
+    ColorSequenceKeypoint.new(0.50, Color3.fromRGB(150, 225, 255)),
+    ColorSequenceKeypoint.new(0.75, Color3.fromRGB(30, 140, 255)),
+    ColorSequenceKeypoint.new(1.00, Color3.fromRGB(8, 50, 190)),
+})
 
 local openBtn = make("TextButton", {
     AnchorPoint = Vector2.new(0.5, 0.5),
-    Size = UDim2.fromOffset(46, 46),
+    Size = UDim2.fromOffset(54, 54),
     Position = UDim2.new(0, 150, 0.62, 90),
-    BackgroundColor3 = COL.bg,
-    Text = "CZX",
-    TextColor3 = COL.white,
-    TextSize = 13,
-    Font = FONT,
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+    AutoButtonColor = false,
+    Text = "",
     ZIndex = 45,
 }, root)
-Corner(openBtn, 23)
-Stroke(openBtn, COL.accent, 1.5)
+Corner(openBtn, 27)
+local btnGrad = make("UIGradient", {Color = BLUE}, openBtn)
+local btnStroke = Stroke(openBtn, Color3.fromRGB(255, 255, 255), 2)
+local strokeGrad = make("UIGradient", {Color = BLUE}, btnStroke)
+
+local hasLeon = LEON_IMAGE ~= "" and LEON_IMAGE ~= "rbxassetid://0"
+local leon = make("ImageLabel", {
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromOffset(40, 40),
+    BackgroundTransparency = 1,
+    Image = hasLeon and LEON_IMAGE or "",
+    ScaleType = Enum.ScaleType.Fit,
+    ZIndex = 46,
+}, openBtn)
+Corner(leon, 20)
+if not hasLeon then
+    make("TextLabel", {   -- пока нет картинки Леона
+        BackgroundTransparency = 1, Size = UDim2.fromScale(1, 1),
+        Font = Enum.Font.GothamBlack, Text = "L", TextSize = 24,
+        TextColor3 = Color3.fromRGB(255, 255, 255), ZIndex = 46,
+    }, openBtn)
+end
 addScale(openBtn, hudScale)
 makeDraggable(openBtn, function() setMenu(not menuOpen) end)
+
+task.spawn(function()   -- перелив: вращение градиента (30 раз в секунду, лёгкая нагрузка)
+    local t = 0
+    while alive do
+        t += 1 / 30
+        btnGrad.Rotation = (t * 110) % 360
+        btnGrad.Offset = Vector2.new(math.sin(t * 2) * 0.25, 0)
+        strokeGrad.Rotation = (-t * 170) % 360
+        task.wait(1 / 30)
+    end
+end)
 
 ------------------------------------------------------------------
 -- Выгрузка
@@ -1739,7 +1712,8 @@ makeDraggable(openBtn, function() setMenu(not menuOpen) end)
 Unload = function()
     if not alive then return end
     for _, f in ipairs(order) do pcall(setFeature, f, false) end
-    ac.on, hl.on = false, false
+    ac.on, hl.on, bf.on = false, false, false
+    pcall(bloodRelease)
     if hl.holding then pcall(restoreWeapon, currentHumanoid()) end
     alive = false
     for _, c in ipairs(connections) do pcall(function() c:Disconnect() end) end
@@ -1750,5 +1724,5 @@ root.Destroying:Connect(Unload)
 applyHUD()
 refreshActive()
 refreshMaster()
-notify("CzxstyleUI загружен. Кнопка CZX открывает меню", true)
-print("[Booga FPS v5] Loaded. CZX button = menu, AC button = auto click.")
+notify("CzxstyleUI загружен. Синяя кнопка с Леоном открывает меню", true)
+print("[Booga FPS v6] Loaded. Leon button = menu.")
