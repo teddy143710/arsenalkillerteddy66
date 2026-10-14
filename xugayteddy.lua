@@ -1701,28 +1701,37 @@ local RGB = ColorSequence.new({
     ColorSequenceKeypoint.new(1.00, Color3.fromRGB(255, 0, 0)),
 })
 
-local openBtn = make("TextButton", {
+local openBtn = make("TextButton", {   -- внешнее RGB-кольцо
     AnchorPoint = Vector2.new(0.5, 0.5),
-    Size = UDim2.fromOffset(54, 54),
+    Size = UDim2.fromOffset(58, 58),
     Position = UDim2.new(0, 150, 0.62, 90),
-    BackgroundTransparency = 1,
+    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
     AutoButtonColor = false,
     Text = "",
     ZIndex = 45,
 }, root)
-Corner(openBtn, 27)
-local btnStroke = Stroke(openBtn, Color3.fromRGB(255, 255, 255), 3)
-local strokeGrad = make("UIGradient", {Color = RGB}, btnStroke)
+Corner(openBtn, 29)
+local strokeGrad = make("UIGradient", {Color = RGB}, openBtn)
 
-make("ImageLabel", {   -- Леон, без фона и без буквы L
+local inner = make("Frame", {   -- тёмная подложка внутри кольца
     AnchorPoint = Vector2.new(0.5, 0.5),
     Position = UDim2.fromScale(0.5, 0.5),
-    Size = UDim2.fromOffset(46, 46),
+    Size = UDim2.fromOffset(50, 50),
+    BackgroundColor3 = Color3.fromRGB(20, 20, 24),
+    BorderSizePixel = 0,
+    ZIndex = 46,
+}, openBtn)
+Corner(inner, 25)
+
+make("ImageLabel", {   -- Леон
+    AnchorPoint = Vector2.new(0.5, 0.5),
+    Position = UDim2.fromScale(0.5, 0.5),
+    Size = UDim2.fromOffset(44, 44),
     BackgroundTransparency = 1,
     Image = LEON_IMAGE,
     ScaleType = Enum.ScaleType.Fit,
-    ZIndex = 46,
-}, openBtn)
+    ZIndex = 47,
+}, inner)
 addScale(openBtn, hudScale)
 makeDraggable(openBtn, function() setMenu(not menuOpen) end)
 
